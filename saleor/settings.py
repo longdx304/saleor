@@ -53,8 +53,8 @@ DATABASES = {
 }
 
 
-TIME_ZONE = "America/Chicago"
-LANGUAGE_CODE = "en"
+TIME_ZONE = "Asia/Ho_Chi_Minh"
+LANGUAGE_CODE = "vi"
 LANGUAGES = [
     ("ar", _("Arabic")),
     ("az", _("Azerbaijani")),
@@ -324,8 +324,8 @@ AUTH_PASSWORD_VALIDATORS = [
     }
 ]
 
-DEFAULT_COUNTRY = os.environ.get("DEFAULT_COUNTRY", "US")
-DEFAULT_CURRENCY = os.environ.get("DEFAULT_CURRENCY", "USD")
+DEFAULT_COUNTRY = os.environ.get("DEFAULT_COUNTRY", "VN")
+DEFAULT_CURRENCY = os.environ.get("DEFAULT_CURRENCY", "VND")
 DEFAULT_DECIMAL_PLACES = get_currency_fraction(DEFAULT_CURRENCY)
 DEFAULT_MAX_DIGITS = 12
 DEFAULT_CURRENCY_CODE_LENGTH = 3
