@@ -33,6 +33,8 @@ All notable, unreleased changes to this project will be documented in this file.
 - Extend top-level connection resolvers with ability to sort results - #5018 by @fowczarek
 - Drop storefront 1.0 - #5043 by @IKarbowiak
 - Replace permissions strings with enums - #5038 by @kswiatek92
+- Remove gateways forms and templates - #5075 by @IKarbowiak
+- Add `Wishlist` models and GraphQL endpoints - #5021 by @derenio
 
 ## 2.9.0
 
