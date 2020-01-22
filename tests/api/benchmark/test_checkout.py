@@ -9,7 +9,8 @@ from tests.api.utils import get_graphql_content
 
 
 @pytest.fixture()
-def checkout_with_variant(checkout, variant):
+def checkout_with_variant(checkout, stock):
+    variant = stock.product_variant
     add_variant_to_checkout(checkout, variant, 1)
     checkout.save()
     return checkout
@@ -74,10 +75,35 @@ def test_create_checkout(api_client, graphql_address_data, variant, count_querie
         fragment ProductVariant on ProductVariant {
           id
           name
-          price {
-            amount
-            currency
-            localized
+          pricing {
+            discountLocalCurrency {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            price {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            priceUndiscounted {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            priceLocalCurrency {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
           }
           product {
             id
@@ -213,10 +239,35 @@ def test_add_shipping_to_checkout(
         fragment ProductVariant on ProductVariant {
           id
           name
-          price {
-            amount
-            currency
-            localized
+          pricing {
+            discountLocalCurrency {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            price {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            priceUndiscounted {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            priceLocalCurrency {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
           }
           product {
             id
@@ -345,10 +396,35 @@ def test_add_billing_address_to_checkout(
         fragment ProductVariant on ProductVariant {
           id
           name
-          price {
-            amount
-            currency
-            localized
+          pricing {
+            discountLocalCurrency {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            price {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            priceUndiscounted {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
+            priceLocalCurrency {
+              currency
+              gross {
+                amount
+                localized
+              }
+            }
           }
           product {
             id

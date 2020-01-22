@@ -1,5 +1,6 @@
 """Checkout-related utility functions."""
 from datetime import date
+from decimal import Decimal
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from django.core.exceptions import ValidationError
@@ -39,6 +40,8 @@ from ..order.actions import order_created
 from ..order.emails import send_order_confirmation, send_staff_order_confirmation
 from ..order.models import Order, OrderLine
 from ..shipping.models import ShippingMethod
+from ..warehouse.availability import check_stock_quantity
+from ..warehouse.management import allocate_stock
 from . import AddressType
 from .models import Checkout, CheckoutLine
 
@@ -57,11 +60,10 @@ def get_checkout_from_request(request, checkout_queryset=Checkout.objects.all())
         token = request.get_signed_cookie(COOKIE_NAME, default=None)
         checkout = get_anonymous_checkout_from_token(token, checkout_queryset)
         user = None
-    if checkout is not None:
-        return checkout
-    if user:
-        return Checkout(user=user)
-    return Checkout()
+    if checkout is None:
+        checkout = Checkout(user=user)
+    checkout.set_country(request.country)
+    return checkout
 
 
 def get_user_checkout(
@@ -98,6 +100,9 @@ def update_checkout_quantity(checkout):
     checkout.quantity = total_lines
     checkout.save(update_fields=["quantity"])
 
+    manager = get_extensions_manager()
+    manager.checkout_quantity_changed(checkout)
+
 
 def check_variant_in_stock(
     checkout, variant, quantity=1, replace=False, check_quantity=True
@@ -114,7 +119,7 @@ def check_variant_in_stock(
         )
 
     if new_quantity > 0 and check_quantity:
-        variant.check_quantity(new_quantity)
+        check_stock_quantity(variant, checkout.get_country(), new_quantity)
 
     return new_quantity, line
 
@@ -187,7 +192,7 @@ def change_billing_address_in_checkout(checkout, address):
         if remove:
             checkout.billing_address.delete()
         checkout.billing_address = address
-        checkout.save(update_fields=["billing_address"])
+        checkout.save(update_fields=["billing_address", "last_change"])
 
 
 def change_shipping_address_in_checkout(checkout, address):
@@ -202,7 +207,7 @@ def change_shipping_address_in_checkout(checkout, address):
         if remove:
             checkout.shipping_address.delete()
         checkout.shipping_address = address
-        checkout.save(update_fields=["shipping_address"])
+        checkout.save(update_fields=["shipping_address", "last_change"])
 
 
 def _get_shipping_voucher_discount_for_checkout(
@@ -394,7 +399,7 @@ def add_voucher_code_to_checkout(
             {
                 "promo_code": ValidationError(
                     "Voucher is not applicable to that checkout.",
-                    code=CheckoutErrorCode.VOUCHER_NOT_APPLICABLE,
+                    code=CheckoutErrorCode.VOUCHER_NOT_APPLICABLE.value,
                 )
             }
         )
@@ -511,7 +516,7 @@ def get_shipping_price_estimate(
 
 def clear_shipping_method(checkout: Checkout):
     checkout.shipping_method = None
-    checkout.save(update_fields=["shipping_method"])
+    checkout.save(update_fields=["shipping_method", "last_change"])
 
 
 def _get_voucher_data_for_order(checkout: Checkout) -> dict:
@@ -555,7 +560,10 @@ def _process_shipping_data_for_order(
 
     if checkout.user:
         store_user_address(checkout.user, shipping_address, AddressType.SHIPPING)
-        if checkout.user.addresses.filter(pk=shipping_address.pk).exists():
+        if (
+            shipping_address
+            and checkout.user.addresses.filter(pk=shipping_address.pk).exists()
+        ):
             shipping_address = shipping_address.get_copy()
 
     return {
@@ -573,7 +581,10 @@ def _process_user_data_for_order(checkout: Checkout):
 
     if checkout.user:
         store_user_address(checkout.user, billing_address, AddressType.BILLING)
-        if checkout.user.addresses.filter(pk=billing_address.pk).exists():
+        if (
+            billing_address
+            and checkout.user.addresses.filter(pk=billing_address.pk).exists()
+        ):
             billing_address = billing_address.get_copy()
 
     return {
@@ -606,7 +617,8 @@ def create_line_for_order(checkout_line: "CheckoutLine", discounts) -> OrderLine
     quantity = checkout_line.quantity
     variant = checkout_line.variant
     product = variant.product
-    variant.check_quantity(quantity)
+    country = checkout_line.checkout.get_country()
+    check_stock_quantity(variant, country, quantity)
 
     product_name = str(product)
     variant_name = str(variant)
@@ -625,6 +637,11 @@ def create_line_for_order(checkout_line: "CheckoutLine", discounts) -> OrderLine
     unit_price = quantize_price(
         total_line_price / checkout_line.quantity, total_line_price.currency
     )
+    tax_rate = (
+        unit_price.tax / unit_price.net
+        if not isinstance(unit_price, Decimal)
+        else Decimal("0.0")
+    )
     line = OrderLine(
         product_name=product_name,
         variant_name=variant_name,
@@ -634,8 +651,8 @@ def create_line_for_order(checkout_line: "CheckoutLine", discounts) -> OrderLine
         is_shipping_required=variant.is_shipping_required(),
         quantity=quantity,
         variant=variant,
-        unit_price=unit_price,
-        tax_rate=unit_price.tax / unit_price.net,
+        unit_price=unit_price,  # type: ignore
+        tax_rate=tax_rate,
     )
 
     return line
@@ -713,7 +730,6 @@ def create_order(
     Current user's language is saved in the order so we can later determine
     which language to use when sending email.
     """
-    from ..product.utils import allocate_stock
     from ..order.utils import add_gift_card_to_order
 
     order = Order.objects.filter(checkout_token=checkout.token).first()
@@ -729,8 +745,8 @@ def create_order(
     # allocate stocks from the lines
     for line in order_lines:  # type: OrderLine
         variant = line.variant
-        if variant.track_inventory:
-            allocate_stock(variant, line.quantity)
+        if variant and variant.track_inventory:
+            allocate_stock(variant, checkout.get_country(), line.quantity)
 
     # Add gift cards to the order
     for gift_card in checkout.gift_cards.select_for_update():
@@ -738,6 +754,11 @@ def create_order(
 
     # assign checkout payments to the order
     checkout.payments.update(order=order)
+
+    # copy metadata from the checkout into the new order
+    order.meta = checkout.meta
+    order.private_meta = checkout.private_meta
+    order.save()
 
     order_created(order=order, user=user)
 
@@ -771,26 +792,27 @@ def clean_checkout(checkout: Checkout, discounts: "DiscountsListType"):
         if not checkout.shipping_method:
             raise ValidationError(
                 "Shipping method is not set",
-                code=CheckoutErrorCode.SHIPPING_METHOD_NOT_SET,
+                code=CheckoutErrorCode.SHIPPING_METHOD_NOT_SET.value,
             )
         if not checkout.shipping_address:
             raise ValidationError(
                 "Shipping address is not set",
-                code=CheckoutErrorCode.SHIPPING_ADDRESS_NOT_SET,
+                code=CheckoutErrorCode.SHIPPING_ADDRESS_NOT_SET.value,
             )
         if not is_valid_shipping_method(checkout, discounts):
             raise ValidationError(
                 "Shipping method is not valid for your shipping address",
-                code=CheckoutErrorCode.INVALID_SHIPPING_METHOD,
+                code=CheckoutErrorCode.INVALID_SHIPPING_METHOD.value,
             )
 
     if not checkout.billing_address:
         raise ValidationError(
-            "Billing address is not set", code=CheckoutErrorCode.BILLING_ADDRESS_NOT_SET
+            "Billing address is not set",
+            code=CheckoutErrorCode.BILLING_ADDRESS_NOT_SET.value,
         )
 
     if not is_fully_paid(checkout, discounts):
         raise ValidationError(
             "Provided payment methods can not cover the checkout's total amount",
-            code=CheckoutErrorCode.CHECKOUT_NOT_FULLY_PAID,
+            code=CheckoutErrorCode.CHECKOUT_NOT_FULLY_PAID.value,
         )

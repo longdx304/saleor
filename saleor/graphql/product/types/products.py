@@ -3,13 +3,12 @@ from typing import List, Union
 
 import graphene
 import graphene_django_optimizer as gql_optimizer
-from django.conf import settings
 from django.db.models import Prefetch
 from graphene import relay
 from graphene_federation import key
 from graphql.error import GraphQLError
 
-from ....core.permissions import OrderPermissions, ProductPermissions
+from ....core.permissions import ProductPermissions
 from ....product import models
 from ....product.templatetags.product_images import (
     get_product_image_thumbnail,
@@ -21,6 +20,13 @@ from ....product.utils.availability import (
     get_variant_availability,
 )
 from ....product.utils.costs import get_margin_for_variant, get_product_costs_data
+from ....warehouse import models as stock_models
+from ....warehouse.availability import (
+    get_available_quantity,
+    get_available_quantity_for_customer,
+    is_product_in_stock,
+    is_variant_in_stock,
+)
 from ...core.connection import CountableDjangoObjectType
 from ...core.enums import ReportingPeriod, TaxRateType
 from ...core.fields import FilterInputConnectionField, PrefetchingConnectionField
@@ -43,6 +49,7 @@ from ...translations.types import (
     ProductVariantTranslation,
 )
 from ...utils import get_database_id, reporting_period_to_date
+from ...warehouse.types import Stock
 from ..filters import AttributeFilterInput
 from ..resolvers import resolve_attributes
 from .attributes import Attribute, SelectedAttribute
@@ -95,7 +102,7 @@ def resolve_attribute_list(
         assigned_attribute_instance_field = "productassignments"
         assigned_attribute_instance_filters = {"product_id": instance.pk}
         if hasattr(product_type, "storefront_attributes"):
-            attributes_qs = product_type.storefront_attributes
+            attributes_qs = product_type.storefront_attributes  # type: ignore
     elif isinstance(instance, models.ProductVariant):
         product_type = instance.product.product_type
         product_type_attributes_assoc_field = "attributevariant"
@@ -137,13 +144,6 @@ class Margin(graphene.ObjectType):
 
 
 class BasePricingInfo(graphene.ObjectType):
-    available = graphene.Boolean(
-        description="Whether it is in stock and visible or not.",
-        deprecation_reason=(
-            "DEPRECATED: Will be removed in Saleor 2.10, "
-            "this has been moved to the parent type as 'isAvailable'."
-        ),
-    )
     on_sale = graphene.Boolean(description="Whether it is in sale or not.")
     discount = graphene.Field(
         TaxedMoney, description="The discount amount if in sale (null otherwise)."
@@ -198,33 +198,26 @@ class ProductVariant(CountableDjangoObjectType, MetadataObjectType):
         required=True,
         description="Quantity of a product in the store's possession, "
         "including the allocated stock that is waiting for shipment.",
+        deprecation_reason="This field will be removed in Saleor 2.11. "
+        "Use the stock field instead.",
+    )
+    quantity_allocated = graphene.Int(
+        required=False,
+        description="Quantity allocated for orders",
+        deprecation_reason="This field will be removed in Saleor 2.11. "
+        "Use the stock field instead.",
     )
     stock_quantity = graphene.Int(
-        required=True, description="Quantity of a product available for sale."
+        required=True,
+        description="Quantity of a product available for sale.",
+        deprecation_reason="This field will be removed in Saleor 2.11. "
+        "Use the stock field instead.",
     )
     price_override = graphene.Field(
         Money,
         description=(
             "Override the base price of a product if necessary. A value of `null` "
             "indicates that the default product price is used."
-        ),
-    )
-    price = graphene.Field(
-        Money,
-        description="Price of the product variant.",
-        deprecation_reason=(
-            "DEPRECATED: Will be removed in Saleor 2.10, "
-            "has been replaced by 'pricing.priceUndiscounted'"
-        ),
-    )
-    availability = graphene.Field(
-        VariantPricingInfo,
-        description=(
-            "Informs about variant's availability in the storefront, current price and "
-            "discounted price."
-        ),
-        deprecation_reason=(
-            "DEPRECATED: Will be removed in Saleor 2.10, has been renamed to `pricing`."
         ),
     )
     pricing = graphene.Field(
@@ -235,8 +228,11 @@ class ProductVariant(CountableDjangoObjectType, MetadataObjectType):
         ),
     )
     is_available = graphene.Boolean(
-        description="Whether the variant is in stock and visible or not."
+        description="Whether the variant is in stock and visible or not.",
+        deprecation_reason="This field will be removed in Saleor 2.11. "
+        "Use the stock field instead.",
     )
+
     attributes = gql_optimizer.field(
         graphene.List(
             graphene.NonNull(SelectedAttribute),
@@ -272,21 +268,31 @@ class ProductVariant(CountableDjangoObjectType, MetadataObjectType):
         model_field="digital_content",
     )
 
+    stock = gql_optimizer.field(
+        graphene.Field(
+            graphene.List(Stock),
+            description="Stocks for the product variant.",
+            country=graphene.String(required=False),
+        )
+    )
+
     class Meta:
         description = (
             "Represents a version of a product such as different size or color."
         )
-        only_fields = [
-            "id",
-            "name",
-            "product",
-            "quantity_allocated",
-            "sku",
-            "track_inventory",
-            "weight",
-        ]
+        only_fields = ["id", "name", "product", "sku", "track_inventory", "weight"]
         interfaces = [relay.Node]
         model = models.ProductVariant
+
+    @staticmethod
+    def resolve_stock(root: models.ProductVariant, info, country=None):
+        if country is None:
+            return gql_optimizer.query(
+                root.stock.annotate_available_quantity().all(), info
+            )
+        return gql_optimizer.query(
+            root.stock.annotate_available_quantity().for_country("country").all(), info
+        )
 
     @staticmethod
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
@@ -294,9 +300,15 @@ class ProductVariant(CountableDjangoObjectType, MetadataObjectType):
         return getattr(root, "digital_content", None)
 
     @staticmethod
-    def resolve_stock_quantity(root: models.ProductVariant, _info):
-        exact_quantity_available = root.quantity_available
-        return min(exact_quantity_available, settings.MAX_CHECKOUT_LINE_QUANTITY)
+    def resolve_stock_quantity(root: models.ProductVariant, info):
+        country = info.context.country
+        try:
+            stock = stock_models.Stock.objects.get_variant_stock_for_country(
+                country, root
+            )
+        except stock_models.Stock.DoesNotExist:
+            return 0
+        return get_available_quantity_for_customer(stock)
 
     @staticmethod
     @gql_optimizer.resolver_hints(
@@ -337,8 +349,9 @@ class ProductVariant(CountableDjangoObjectType, MetadataObjectType):
     resolve_availability = resolve_pricing
 
     @staticmethod
-    def resolve_is_available(root: models.ProductVariant, _info):
-        return root.is_available
+    def resolve_is_available(root: models.ProductVariant, info):
+        country = info.context.country
+        return is_variant_in_stock(root, country)
 
     @staticmethod
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
@@ -347,29 +360,24 @@ class ProductVariant(CountableDjangoObjectType, MetadataObjectType):
 
     @staticmethod
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
-    def resolve_quantity(root: models.ProductVariant, *_args):
-        return root.quantity
+    def resolve_quantity(root: models.ProductVariant, info):
+        return get_available_quantity(root, info.context.country)
 
     @staticmethod
-    @permission_required(
-        [OrderPermissions.MANAGE_ORDERS, ProductPermissions.MANAGE_PRODUCTS]
-    )
+    @permission_required(ProductPermissions.MANAGE_PRODUCTS)
     def resolve_quantity_ordered(root: models.ProductVariant, *_args):
         # This field is added through annotation when using the
         # `resolve_report_product_sales` resolver.
         return getattr(root, "quantity_ordered", None)
 
-    @staticmethod
-    @permission_required(
-        [OrderPermissions.MANAGE_ORDERS, ProductPermissions.MANAGE_PRODUCTS]
-    )
-    def resolve_quantity_allocated(root: models.ProductVariant, *_args):
-        return root.quantity_allocated
+    @permission_required(ProductPermissions.MANAGE_PRODUCTS)
+    def resolve_quantity_allocated(root: models.ProductVariant, info):
+        country = info.context.country
+        stock = stock_models.Stock.objects.get_variant_stock_for_country(country, root)
+        return stock.quantity_allocated
 
     @staticmethod
-    @permission_required(
-        [OrderPermissions.MANAGE_ORDERS, ProductPermissions.MANAGE_PRODUCTS]
-    )
+    @permission_required(ProductPermissions.MANAGE_PRODUCTS)
     def resolve_revenue(root: models.ProductVariant, *_args, period):
         start_date = reporting_period_to_date(period)
         return calculate_revenue_for_variant(root, start_date)
@@ -411,16 +419,6 @@ class Product(CountableDjangoObjectType, MetadataObjectType):
         description="The main thumbnail for a product.",
         size=graphene.Argument(graphene.Int, description="Size of thumbnail."),
     )
-    availability = graphene.Field(
-        ProductPricingInfo,
-        description=(
-            "Informs about product's availability in the storefront, current price and "
-            "discounts."
-        ),
-        deprecation_reason=(
-            "DEPRECATED: Will be removed in Saleor 2.10, Has been renamed to `pricing`."
-        ),
-    )
     pricing = graphene.Field(
         ProductPricingInfo,
         description=(
@@ -432,14 +430,6 @@ class Product(CountableDjangoObjectType, MetadataObjectType):
         description="Whether the product is in stock and visible or not."
     )
     base_price = graphene.Field(Money, description="The product's default base price.")
-    price = graphene.Field(
-        Money,
-        description="The product's default base price.",
-        deprecation_reason=(
-            "DEPRECATED: Will be removed in Saleor 2.10, has been replaced by "
-            "`basePrice`"
-        ),
-    )
     minimal_variant_price = graphene.Field(
         Money, description="The price of the cheapest variant (including discounts)."
     )
@@ -538,7 +528,9 @@ class Product(CountableDjangoObjectType, MetadataObjectType):
     @staticmethod
     @gql_optimizer.resolver_hints(prefetch_related=("variants"))
     def resolve_is_available(root: models.Product, _info):
-        return root.is_available
+        country = _info.context.country
+        in_stock = is_product_in_stock(root, country)
+        return root.is_visible and in_stock
 
     @staticmethod
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
@@ -699,7 +691,7 @@ class ProductType(CountableDjangoObjectType, MetadataObjectType):
     @staticmethod
     def resolve_products(root: models.ProductType, info, **_kwargs):
         if hasattr(root, "prefetched_products"):
-            return root.prefetched_products
+            return root.prefetched_products  # type: ignore
         qs = root.products.visible_to_user(info.context.user)
         return gql_optimizer.query(qs, info)
 
@@ -766,7 +758,7 @@ class Collection(CountableDjangoObjectType, MetadataObjectType):
     @staticmethod
     def resolve_products(root: models.Collection, info, **_kwargs):
         if hasattr(root, "prefetched_products"):
-            return root.prefetched_products
+            return root.prefetched_products  # type: ignore
         qs = root.products.collection_sorted(info.context.user)
         return gql_optimizer.query(qs, info)
 
