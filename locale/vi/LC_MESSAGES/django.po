@@ -2,7 +2,7 @@
 # Copyright (C) 2017 Mirumee Software
 # This file is distributed under the same license as the Saleor package.
 # Mirumee Software <hello@mirumee.com>, 2017.
-# 
+#
 # Translators:
 # Tran Van <vantxm@yahoo.co.uk>, 2018
 # Chung Hien Hoang <hoangchunghien@gmail.com>, 2018
@@ -10,7 +10,7 @@
 # Khoa <lnxkhoa@gmail.com>, 2019
 # Trong Lam Phan <lampt2509@gmail.com>, 2019
 # Hung Nguyen Tien <hung.nguyentien97@gmail.com>, 2019
-# 
+#
 #, fuzzy
 msgid ""
 msgstr ""
@@ -3706,7 +3706,7 @@ msgstr "Nơi giao"
 #: templates/dashboard/order/pdf/packing_slip.html:58
 msgctxt "Order table header"
 msgid "Item"
-msgstr ""
+msgstr "Sản Phẩm"
 
 #: templates/dashboard/order/detail.html:284
 msgctxt "Order table header"
@@ -3963,7 +3963,7 @@ msgstr ""
 #: templates/dashboard/order/modal/cancel_line.html:25
 msgctxt "Modal remove order line table header"
 msgid "Item"
-msgstr ""
+msgstr "Sản Phẩm"
 
 #: templates/dashboard/order/fulfillment.html:70
 #: templates/dashboard/order/modal/cancel_line.html:34
@@ -4337,7 +4337,7 @@ msgstr ""
 #: templates/dashboard/order/pdf/invoice.html:54
 msgctxt "Shipment order table header"
 msgid "Item"
-msgstr ""
+msgstr "Sản Phẩm"
 
 #: templates/dashboard/order/pdf/invoice.html:58
 msgctxt "Shipment order table header"
@@ -6374,7 +6374,7 @@ msgstr ""
 #, python-format
 msgctxt "Set password for staff member e-mail title"
 msgid "Hello from %(site_name)s!"
-msgstr ""
+msgstr "Chào mừng bạn đã gia nhập gia đình %(site_name)s!"
 
 #: templates/templated_email/dashboard/staff/set_password.email:6
 #, python-format
@@ -6383,20 +6383,20 @@ msgid ""
 "\n"
 "You're receiving this e-mail because you have to set a password for your staff member account at %(domain)s.\n"
 "Click the link below to reset your password.\n"
-msgstr ""
+msgstr "\nEmail này được gửi đến để chào mừng và hướng dẫn việc thiết lập mật khẩu quản trị của bạn tại %(domain)s.\nXin hãy ấn vào đường link dưới để cài đặt mật khẩu mới.\n"
 
 #: templates/templated_email/order/confirm_fulfillment.email:4
 #, python-format
 msgctxt "Fulfillment confirmation email subject"
 msgid "Your order %(order)s has been fulfilled"
-msgstr ""
+msgstr "Đơn hàng số %(order)s của bạn đã được đáp ứng"
 
 #: templates/templated_email/order/confirm_fulfillment.email:11
 msgctxt "Fulfillment confirmation email text"
 msgid ""
 "\n"
 "Thank you for your order. Below is the list of fulfilled products.\n"
-msgstr ""
+msgstr "\nCảm ơn bạn đã tin tưởng đặt hàng từ chúng tôi. Dưới đây là danh sách các sản phẩm đã được đáp ứng.\n"
 
 #: templates/templated_email/order/confirm_fulfillment.email:15
 #: templates/templated_email/source/confirm_fulfillment.mjml:20
@@ -6516,14 +6516,14 @@ msgstr ""
 #: templates/templated_email/source/shared/footer.mjml:4
 msgctxt "Base email text"
 msgid "This is an automatically generated e-mail, please do not reply."
-msgstr ""
+msgstr "Đây là thư được gửi tự động, xin đừng phản hồi lại email này."
 
 #: templates/templated_email/shared/_footer.email:5
 #: templates/templated_email/source/shared/footer.mjml:13
 #, python-format
 msgctxt "Base email footer"
 msgid "Sincerely, %(site_name)s"
-msgstr ""
+msgstr "Thân ái, %(site_name)s"
 
 #: templates/templated_email/shared/_header.email:2
 #: templates/templated_email/source/account_delete.mjml:13
@@ -6537,7 +6537,7 @@ msgstr ""
 #: templates/templated_email/source/update_fulfillment.mjml:13
 msgctxt "Standard e-mail greeting"
 msgid "Hi!"
-msgstr ""
+msgstr "Xin chào!"
 
 #: templates/templated_email/source/account_delete.mjml:16
 #, python-format
@@ -6552,7 +6552,7 @@ msgstr ""
 #: templates/templated_email/source/confirm_fulfillment.mjml:16
 msgctxt "Fulfillment confirmation email text"
 msgid "Thank you for your order. Below is the list of fulfilled products."
-msgstr ""
+msgstr "Cảm ơn bạn đã tin tưởng đặt hàng từ chúng tôi. Dưới đây là danh sách các sản phẩm đã được đáp ứng."
 
 #: templates/templated_email/source/confirm_fulfillment.mjml:27
 msgctxt "Fulfillment digital products email text"
@@ -6610,7 +6610,7 @@ msgstr "Tổng"
 #: templates/templated_email/source/partials/_order_lines.mjml:58
 msgctxt "Ordered item name"
 msgid "Item"
-msgstr ""
+msgstr "Sản Phẩm"
 
 #: templates/templated_email/source/partials/_order_lines.mjml:59
 msgctxt "Quantity ordered of a product"
@@ -6660,9 +6660,9 @@ msgstr ""
 msgctxt "Set password for staff member e-mail text"
 msgid ""
 "You're receiving this e-mail because you have to set password for your staff"
-" member account at %(domain)s.<br/> Click the link below to set up your "
+" member account at %(domain)s.<br> Click the link below to set up your "
 "password."
-msgstr ""
+msgstr "Email này được gửi đến để chào mừng và hướng dẫn việc thiết lập mật khẩu quản trị của bạn tại %(domain)s.<br> Xin hãy ấn vào đường link dưới để cài đặt mật khẩu mới."
 
 #: templates/templated_email/source/update_fulfillment.mjml:16
 msgctxt "Fulfillment update email text"
